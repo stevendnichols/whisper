@@ -3,7 +3,7 @@ Whisper: a steganographic tool for hiding data inside audio
 
 What is steganography?
 
-Simply put, steganography is concealing data within other data. Contrary to the case of cryptography, data concealed by steganography is completely vulnerable if detected. Nevertheless, the power of steganography is not so much its security but rather its obscurity, that is, the fact that no one may be looking for data concealed in this way. Arguably, if ever quantum computing renders useless the security of current cryptography, there may be some time before the advent of quantum cryptography that obscurity may be our only remaining choice.    
+Simply put, steganography is concealing data within other data. Contrary to the case of cryptography, data concealed by steganography is completely vulnerable if detected. Nevertheless, the power of steganography is not so much its security but rather its obscurity, that is, the fact that no one may be looking for data concealed in this way. Arguably, if ever quantum computing renders useless the security of current cryptography, there may be some time before the advent of quantum cryptography such that obscurity may be our only remaining choice.    
 
 What is it that Whisper does?
 
