@@ -109,6 +109,7 @@ int main(int argc, char **argv)
 		my_whisper.set_out_musicpath(p_music_out);
 		my_whisper.open_files_for_encoding();
 		my_whisper.encode_data();
+		my_whisper.close_files();
 
 		cout << "Done" << endl;
 		return 0;
@@ -167,7 +168,6 @@ int main(int argc, char **argv)
 		my_whisper.set_in_musicpath(p_music_in);
 		my_whisper.open_files_for_decoding();
 		my_whisper.decode_data();
-		my_whisper.copy_remaining_samples();
 	}
 	cout << "Done" << endl;
 	return status;
