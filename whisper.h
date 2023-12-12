@@ -77,11 +77,11 @@ namespace whisper
 	{
 		uint32_t
 			sample_bits_select : 3,			// sample_bits == 8 * (sample_bits_select + 1);  for now, this is always 1
-			threshold_factor : 6,			// threshold = 1 << threshold_factor;   1 < threshold  <=   (1 << (sample_bits - 3))
-			mask_factor : 6,				// mask = ((1 << mask_factor) - 1) & ((1 << threshold_factor) - 1)
+			threshold_factor : 5,			// threshold = 1 << threshold_factor;   1 < threshold  <=   (1 << (sample_bits - 3))
+			mask_factor : 3,				// mask = ((1 << mask_factor) - 1) & ((1 << threshold_factor) - 1)
 			ignore_sign : 1,				// only default (false) is currently supported
 			skip_min_neg_sample_value : 1,  // default is false, but this flag is currently ignored, so effectively, the sample is always skipped
-			unused : 5,
+			unused : 9,
 			filename_size : 10;				// This allows for an excessive amount of metadata for which sufficient space may not be available: YMMV!
 	} attribit_fields;
 
@@ -107,19 +107,24 @@ namespace whisper
 		WavMetadata wav_metadata;
 	public:
 		template<typename SAMPLE_TYPE_T>
-		bool calc_threshold(SAMPLE_TYPE_T& threshold);
+		void calc_threshold(SAMPLE_TYPE_T& threshold);
 		template<typename SAMPLE_TYPE_T>
 		bool calc_max_data_bitmask(SAMPLE_TYPE_T& bitmask);
 		template<typename SAMPLE_TYPE_T>
-		bool get_data_bitmask(SAMPLE_TYPE_T& bitmask);
+		bool calc_data_bitmask(SAMPLE_TYPE_T& bitmask);
 		template<typename SAMPLE_TYPE_T>
 		bool calc_default_threshold(SAMPLE_TYPE_T& threshold);
 		template<typename SAMPLE_TYPE_T>
-		uint8_t data_mask_bitcount(SAMPLE_TYPE_T data_mask);
+		void calc_max_threshold_factor(SAMPLE_TYPE_T& threshold_factor);
+		template<typename SAMPLE_TYPE_T>
+		void calc_max_threshold(SAMPLE_TYPE_T& threshold);
 
 		whisper_engine()
 		{
 			fixed_fields = { { 'W','H','I','S','P','E','R' }, {0}, 0 };
+			fixed_fields.attribits.threshold_factor = 8;
+			fixed_fields.attribits.sample_bits_select = 1;
+			fixed_fields.attribits.skip_min_neg_sample_value = true;
 			wav_metadata = { 0 };
 		}
 		int encode_data();
@@ -142,8 +147,6 @@ namespace whisper
 		std::ios_base::fmtflags write_single_hidden_datum(uint8_t* data, int32_t data_width);
 
 		std::ios_base::fmtflags decode_hidden_data();
-
-		uint16_t data_mask_bitcount();
 
 		bool datafile_exists();
 
@@ -170,12 +173,6 @@ namespace whisper
 		uint8_t sample_bytes();
 
 		uint8_t sample_bits();
-
-		int32_t threshold();
-
-		bool threshold_is_valid();
-
-		bool data_mask_is_valid();
 
 		std::ios_base::fmtflags copy_remaining_samples(); // expects open files and does not close them
 

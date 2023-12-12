@@ -12,6 +12,8 @@
 
 using namespace whisper;
 
+
+
 fixed_metadata whisper_engine::get_whisper_metadata()
 {
 	return fixed_fields;
@@ -59,7 +61,7 @@ ios_base::iostate whisper_engine::decode_whisper_metadata()
 	}
 	else
 	{
-		cout << "Magic is " << m << endl;
+		cout << "Identified whisper content" << endl;
 	}
 
 	return status;
@@ -71,18 +73,13 @@ ios_base::iostate whisper_engine::decode_whisper_embedded_filename()
 	uint8_t data_byte = 0;
 	ios_base::iostate status = 0;
 	filename = "";
-	cout << __FUNCTION__ << endl;
-	cout << "fixed_fields.attribits.filename_size: " << fixed_fields.attribits.filename_size << endl;
 
 	for (index = 0; !status && index < fixed_fields.attribits.filename_size; index++)
 	{
 		status = decode_data_byte(data_byte);
 		char c = data_byte;
 		filename += c;
-		cout << c << endl;
 	}
-
-	cout << "filename: " << filename << endl;
 
 	if (index < fixed_fields.attribits.filename_size)
 	{
@@ -166,9 +163,7 @@ int whisper_engine::decode_data()
 
 	datafilepath /= filename;
 
-	cout << "Creating file" << endl;
-	cout << filename << endl;
-	cout << datafilepath << endl;
+	cout << "Creating file " << filename << endl;
 
 	datafile.open(datafilepath, std::fstream::binary | std::fstream::out | std::fstream::trunc);
 	
@@ -176,7 +171,7 @@ int whisper_engine::decode_data()
 	{
 		infile.close();
 		datafile.close();
-		return -1;
+		exit(- 1);
 	}
 
 	status = decode_hidden_data();
@@ -184,7 +179,7 @@ int whisper_engine::decode_data()
 	if (status)
 	{
 		cout << "Hidden data decode error" << endl;
-		return status;
+		exit(-1);
 	}
 
 	return status;
@@ -192,112 +187,25 @@ int whisper_engine::decode_data()
 
 int whisper_engine::encode_data()
 {
-	//std::string outfilename = infilename;
-	//auto pin = std::filesystem::path(default_inpath_str);
-	//auto pout = std::filesystem::path(default_outpath_str);
-	//auto pdata_in = std::filesystem::path(default_data_inpath_str);
 	int status = 0;
-	//Whisper::EmbeddedMetadata metadata;
-	//metadata.data_byte_count = data_size;
 
 	fixed_fields.data_byte_count = filesystem::file_size(datafilepath);
 
 	filename = datafilepath.filename().string();
 	
-	cout << filename << endl;
 	if (filename.length() >= 1023  ||  filename.length() < 1)
 	{
-		cout << "Datafile name must be less than 1023 characters" << endl;
-		return -1;
+		cout << "Datafile name must have fewer than 1023 characters" << endl;
+		exit(- 1);
 	}
-	//strncpy(metadata.file_name, datafilename.c_str(), 254);
-	//metadata.file_name[255] = '\0';
-	//metadata.max_data_mask = 0x0F;
 
-	//std::cout << infilename << std::endl;
-	//std::cout << outfilename << std::endl;
-	//std::cout << datafilename << std::endl;
-
-	//cout << pin.string() << endl;
-
-	//if (!std::filesystem::is_directory(pin))
-	//{
-	//	std::cout << pin.string() << " not a directory" << std::endl;
-	//	return -1;
-	//}
-
-	//if (!std::filesystem::is_directory(pout))
-	//{
-	//	std::cout << pout.string() << " not a directory" << std::endl;
-	//	return -1;
-	//}
-
-	//pin /= infilename;
-
-	//if (!std::filesystem::is_directory(pdata_in))
-	//{
-	//	std::cout << pdata_in.string() << " not a directory" << std::endl;
-	//	return -1;
-	//}
-
-	//pdata_in /= datafilename;
-
-	//if (!std::filesystem::is_regular_file(pdata_in))
-	//{
-	//	std::cout << pdata_in.string() << " not a file" << std::endl;
-	//	return -1;
-	//}
-
-	//if (!std::filesystem::is_regular_file(pin))
-	//{
-	//	std::cout << pin.string() << " not a file" << std::endl;
-	//	return -1;
-	//}
-
-	//pout /= outfilename;
-
-	//std::cout << pin.string() << std::endl;
-	//std::cout << pout.string() << std::endl;
-
-	//std::fstream data_infile; 
-	//std::fstream infile;
-	//std::fstream outfile;
-
-	//std::filesystem::copy_file(pin, pout);
-
-	//if(OpenFiles(pin.string(), pout.string(), pdata_in.string(), infile, outfile, data_infile))
-	//	return -1;
-
-	status = copy_wav_metadata();
-	//if (status)
-	//{
-	//	infile.close();
-	//	outfile.close();
-	//	datafile.close();
-	//	return status;
-	//}
-
-	status = write_whisper_metadata();
-
-	status = write_whisper_embedded_filename();
-	//if (status)
-	//{
-	//	infile.close();
-	//	outfile.close();
-	//	datafile.close();
-	//	return status;
-	//}
-	status = write_hidden_data();
-	//if (status)
-	//{
-	//	infile.close();
-	//	outfile.close();
-	//	datafile.close();
-	//	return status;
-	//}
-	status = copy_remaining_samples();
+	copy_wav_metadata();
+	write_whisper_metadata();
+	write_whisper_embedded_filename();
+	write_hidden_data();
+	copy_remaining_samples();
 	close_files();
-	return status;
+	return 0;
 }
 
 void whisper_engine::close_files()
@@ -313,44 +221,27 @@ int whisper_engine::open_files_for_decoding()
 	unique_names.insert(datafilepath);
 	unique_names.insert(infilepath);
 
-	cout << __FUNCTION__ << endl;
-
 	if (unique_names.size() != 2)
 	{
 		cout << "Data and media files must be different" << endl;
-		return -1;
+		exit (-1);
 	}
 
-	cout << infilepath << endl;
-	infile.open(infilepath, std::fstream::binary | std::fstream::in); //infilename.string(), std::fstream::binary | std::fstream::in);
+	infile.open(infilepath, std::fstream::binary | std::fstream::in); 
 
 	if (infile.eof() || infile.fail() || infile.bad())
 	{
 		infile.close();
 		cout << "Could not open " << infilepath << endl;
-		return -1;
+		exit(-1);
 	}
-
-	//datafile.open(datafilepath, std::fstream::binary | std::fstream::out | std::fstream::trunc);
-	//
-	//if (datafile.fail() || datafile.bad())
-	//{
-	//	infile.close();
-	//	datafile.close();
-	//	return -1;
-	//}
 
 	return 0;
 }
 
-//int EmbeddedMetadata::OpenFilesForEncoding(std::filesystem::path infilename, std::filesystem::path outfilename)
-int whisper_engine::open_files_for_encoding() //std::filesystem::path infilename, std::filesystem::path outfilename)
-{
-	//std::set<std::string> unique_names;
-	//unique_names.insert(infilename.string());
-	//unique_names.insert(datafilename.string());
-	//unique_names.insert(outfilename.string());
 
+int whisper_engine::open_files_for_encoding() 
+{
 	set<path> unique_names;
 	unique_names.insert(datafilepath);
 	unique_names.insert(infilepath);
@@ -358,13 +249,15 @@ int whisper_engine::open_files_for_encoding() //std::filesystem::path infilename
 
 	if (unique_names.size() != 3)
 	{
-		return -1;
+		cout << "Each filename must be unique. Try again. " << endl;
+ 		exit(- 1);
 	}
 
-	infile.open(infilepath, std::fstream::binary | std::fstream::in); //infilename.string(), std::fstream::binary | std::fstream::in);
+	infile.open(infilepath, std::fstream::binary | std::fstream::in); 
 
 	if (infile.eof() || infile.fail() || infile.bad())
 	{
+		cout << "Failed to open media input file: " << infilepath.string() << endl;
 		infile.close();
 		return -1;
 	}
@@ -373,6 +266,7 @@ int whisper_engine::open_files_for_encoding() //std::filesystem::path infilename
 
 	if (datafile.eof() || datafile.fail() || datafile.bad())
 	{
+		cout << "Failed to open data file: " << datafilepath.string() << endl;
 		infile.close();
 		datafile.close();
 		return -1;
@@ -386,59 +280,49 @@ int whisper_engine::open_files_for_encoding() //std::filesystem::path infilename
 
 	if (outfile.fail() || outfile.bad())
 	{
-		infile.close();
-		datafile.close();
-		outfile.close();
-		return -1;
+		cout << "Failed to create media output file: " << outfilepath.string() << endl;
+		close_files();
+		exit (-1);
 	}
 
 	return 0;
 }
 
-std::ios_base::fmtflags whisper_engine::copy_remaining_samples() // expects open files and does not close them
+std::ios_base::fmtflags whisper_engine::copy_remaining_samples() 
 {
 	int16_t sample = 0;
 	infile.read((char*)&sample, sizeof(sample));
 	auto state = infile.rdstate();
-	int rt_val = -__LINE__; 
 
-	while (!state) /// !infile.bad() && !infile.eof() && !infile.fail())
+	while (!state) 
 	{
 		outfile.write((const char*)&sample, sizeof(sample));
-		state = outfile.rdstate();
-		if (outfile.eof())
+		if (outfile.bad()  || outfile.fail())
 		{
-			cout << "outfile.eof" << endl;
-			return -__LINE__;
+			cout << "File write error" << endl; 
+			close_files();
+			return -1;
 		}
-		if (outfile.bad())
-		{
-			cout << "outfile.bad" << endl;
-			return -__LINE__;
-		}
-		if (outfile.fail())
-		{
-			cout << "outfile.fail" << endl;
-			return -__LINE__;
-		}
-		rt_val = -__LINE__;
-		if(state)
-			break;
 		infile.read((char*)&sample, sizeof(sample));
 		state = infile.rdstate();
+		if (infile.eof())
+		{
+			close_files();
+			return ios_base::goodbit;
+		}
+		if (infile.fail() || infile.bad())
+		{
+			cout << "File read error " << endl;
+			close_files();
+			exit(-1);
+		}
 	}
 
-	if (state)
-	{
-		infile.close();
-		outfile.close();
-		datafile.close();
-	}
-
-	return rt_val;
+	close_files();
+	return state;
 }
 
-std::ios_base::fmtflags whisper_engine::read_wav_metadata(WavMetadata &wav_metadata) // expects open files and does not close them
+std::ios_base::fmtflags whisper_engine::read_wav_metadata(WavMetadata &wav_metadata) 
 {
 	wav_metadata = { 0 };
 	infile.read((char*)&wav_metadata, sizeof(wav_metadata));
@@ -454,7 +338,7 @@ std::ios_base::fmtflags whisper_engine::read_wav_metadata(WavMetadata &wav_metad
 }
 
 
-std::ios_base::fmtflags whisper_engine::copy_wav_metadata() // expects open files and does not close them
+std::ios_base::fmtflags whisper_engine::copy_wav_metadata() 
 {
 	whisper::WavMetadata wav_metadata = { 0 };
 	auto state = read_wav_metadata(wav_metadata);
@@ -473,24 +357,24 @@ std::ios_base::fmtflags whisper_engine::copy_wav_metadata() // expects open file
 		exit(-1);
 	}
 
-	if (wav_metadata.format.numsamplebits % 8 || (wav_metadata.format.numsamplebits != 16))
+	if (wav_metadata.format.numsamplebits % 8 || (wav_metadata.format.numsamplebits != 16))  // currently only 16-bit is supported
 	{
-		close_files();
 		cout << "Unsupported bits-per-sample: " << wav_metadata.format.numsamplebits << endl;
+		close_files();
 		exit(-1);
 	}
 
 	if (wav_metadata.format.alignment != wav_metadata.format.numchannels * wav_metadata.format.numsamplebits / 8)
 	{
-		close_files();
 		cout << "Incorrect sample alignmnet in WAV metadata" << endl;
+		close_files();
 		exit(-1);
 	}
 
 	fixed_fields.attribits.sample_bits_select = (wav_metadata.format.numsamplebits / 8) - 1;  
 	fixed_fields.attribits.threshold_factor =    wav_metadata.format.numsamplebits / 2;  // default
-	fixed_fields.attribits.mask_factor = 1;
-	fixed_fields.attribits.skip_min_neg_sample_value = 1;
+	fixed_fields.attribits.mask_factor = 0;  // default (this is the only supported value at this time
+	fixed_fields.attribits.skip_min_neg_sample_value = true;
 	fixed_fields.attribits.ignore_sign = 0;
 
 	outfile.write((char*)&wav_metadata, sizeof(wav_metadata));
@@ -509,18 +393,16 @@ std::ios_base::fmtflags whisper_engine::write_whisper_embedded_filename() // exp
 	int16_t sample = 0;
 	infile.read((char*)&sample, sizeof(sample));
 
-	//uint8_t* chrptr = (uint8_t*)&fixed_fields;
-
 	uint32_t str_size = datafilepath.filename().string().length();
 	const string tmp_filename = datafilepath.filename().string();
-	cout << tmp_filename << endl;
+
 	auto chrptr = tmp_filename.c_str();
 	uint8_t bit_pos = 1;
 	uint8_t index = 0;
 
 	int16_t threshold = 0x800;
 
-	while (!infile.rdstate()) /// !infile.bad() && !infile.eof() && !infile.fail())
+	while (!infile.rdstate()) 
 	{
 		int16_t absamp = abs(sample);
 		if (absamp >= threshold)
@@ -541,7 +423,6 @@ std::ios_base::fmtflags whisper_engine::write_whisper_embedded_filename() // exp
 			bit_pos <<= 1;
 			if (!bit_pos)
 			{
-				cout << chrptr[index] << endl;
 				index++;
 				bit_pos = 1;
 			}
@@ -556,7 +437,7 @@ std::ios_base::fmtflags whisper_engine::write_whisper_embedded_filename() // exp
 
 	if (index < sizeof(str_size))   // not enough sample space for filename
 	{
-		cout << "not enough space for filename???" << endl;
+		cout << "not enough space for filename" << endl;
 		return -1;
 	}
 
@@ -574,7 +455,7 @@ std::ios_base::fmtflags whisper_engine::write_whisper_metadata() // expects open
 
 	int16_t threshold = 0x800;
 
-	while (!infile.rdstate()) /// !infile.bad() && !infile.eof() && !infile.fail())
+	while (!infile.rdstate()) 
 	{
 		int16_t absamp = abs(sample);
 		if (absamp >= threshold)
@@ -636,7 +517,7 @@ std::ios_base::fmtflags whisper_engine::write_single_hidden_datum(uint8_t *data,
 	if (data_width < 1)
 	{
 		return 0;
-	}
+	} 
 	infile.read((char*)&sample, sizeof(sample));
 
 	uint8_t* ptr_data = data;
@@ -645,7 +526,7 @@ std::ios_base::fmtflags whisper_engine::write_single_hidden_datum(uint8_t *data,
 
 	int16_t threshold = 0x800;
 
-	while (!infile.rdstate()) /// !infile.bad() && !infile.eof() && !infile.fail())
+	while (!infile.rdstate()) 
 	{
 		int16_t absamp = abs(sample);
 		if (absamp >= threshold)
@@ -692,7 +573,6 @@ std::ios_base::fmtflags whisper_engine::decode_hidden_data() // expects open fil
 	uint32_t index = 0;
 	uint8_t data_byte = 0;
 	ios_base::iostate state = 0;
-	cout << __FUNCTION__ << endl;
 
 	for (index = 0; !state && index < fixed_fields.data_byte_count; index++)
 	{
@@ -719,22 +599,6 @@ std::ios_base::fmtflags whisper_engine::decode_hidden_data() // expects open fil
 	return state;
 }
 
-
-template<typename SAMPLE_TYPE_T>
-bool whisper_engine::calc_threshold(SAMPLE_TYPE_T &threshold)
-{
-	uint8_t max_sample_bits = sizeof(threshold) * 8;
-	uint8_t effective_sample_bits = min(sample_bits(), max_sample_bits);
-	uint8_t effective_threshold_factor = fixed_fields.attribits.threshold_factor;
-	uint8_t max_threshold_factor = effective_sample_bits - 3;
-	bool ret_val = effective_threshold_factor <= max_threshold_factor;
-
-	effective_threshold_factor = min(effective_threshold_factor, max_threshold_factor);
-	threshold = (effective_threshold_factor ? 1 << effective_threshold_factor: 1);
-
-	return ret_val;
-}
-
 template<typename SAMPLE_TYPE_T>
 bool whisper_engine::calc_max_data_bitmask(SAMPLE_TYPE_T &bitmask)
 {
@@ -745,12 +609,8 @@ bool whisper_engine::calc_max_data_bitmask(SAMPLE_TYPE_T &bitmask)
 }
 
 template<typename SAMPLE_TYPE_T>
-bool whisper_engine::get_data_bitmask(SAMPLE_TYPE_T &bitmask)
+bool whisper_engine::calc_data_bitmask(SAMPLE_TYPE_T& bitmask)
 {
-	if(!fixed_fields.attribits.threshold_factor)
-		fixed_fields.attribits.threshold_factor = wav_metadata.format.numsamplebits / 2;  // default
-	if (fixed_fields.attribits.mask_factor > fixed_fields.attribits.threshold_factor)
-		fixed_fields.attribits.mask_factor = fixed_fields.attribits.threshold_factor;
 	if (!fixed_fields.attribits.mask_factor)
 		fixed_fields.attribits.mask_factor = 1;
 	auto mask_factor = fixed_fields.attribits.mask_factor;
@@ -762,6 +622,7 @@ bool whisper_engine::get_data_bitmask(SAMPLE_TYPE_T &bitmask)
 	return  true;
 }
 
+
 template<typename SAMPLE_TYPE_T>
 bool whisper_engine::calc_default_threshold(SAMPLE_TYPE_T &threshold)
 {
@@ -771,25 +632,6 @@ bool whisper_engine::calc_default_threshold(SAMPLE_TYPE_T &threshold)
 	threshold =  1 << shift_factor;
 
 	return true;
-}
-
-uint16_t whisper_engine::data_mask_bitcount()
-{
-	//threshold_val = calc_nearest_threshold_value(threshold_val);
-	uint16_t	bit = 1;
-	int16_t		count = 0;
-	uint16_t data_mask = 1;
-
-	get_data_bitmask(data_mask);
-
-	while (bit)
-	{
-		if (data_mask & bit)
-			count++;
-		bit <<= 1;
-	}
-
-	return count;
 }
 
 bool whisper_engine::datafile_exists()
@@ -854,7 +696,7 @@ bool whisper_engine::set_datafile_name(filesystem::path file_path, bool read_onl
 			exit(-1);
 		}
 	}
-	filename = "";  // file_path.filename().string();
+	filename = "";  
 	datafilepath = file_path;
 	return true;
 }
@@ -914,7 +756,10 @@ bool whisper_engine::set_out_musicpath(filesystem::path file_path)
 
 uint8_t whisper_engine::data_mask_bit_count()
 {
-	return fixed_fields.attribits.mask_factor;
+	uint8_t mask_factor = fixed_fields.attribits.mask_factor;
+	if (!mask_factor)
+		return 1;
+	return 1 << mask_factor;
 }
 
 int64_t whisper_engine::precision_mask()
@@ -924,8 +769,8 @@ int64_t whisper_engine::precision_mask()
 
 bool whisper_engine::magic_is_valid()
 {
-	char whisper[] = "WHISPER";
-	return !memcmp(whisper, fixed_fields.magic, 7);
+	char whisper_str[] = "WHISPER";
+	return !memcmp(whisper_str, fixed_fields.magic, 7);
 }
 
 inline uint8_t whisper_engine::sample_bytes()
@@ -938,17 +783,38 @@ inline uint8_t whisper_engine::sample_bits()
 	return 8 * sample_bytes();
 }
 
-int32_t whisper_engine::threshold()
+template<typename SAMPLE_TYPE_T>
+void whisper_engine::calc_max_threshold_factor(SAMPLE_TYPE_T &threshold_factor)
 {
-	return 1 << fixed_fields.attribits.threshold_factor;
+	threshold_factor = sizeof(threshold_factor) - 4;
 }
 
-bool whisper_engine::threshold_is_valid()
+template<typename SAMPLE_TYPE_T>
+void whisper_engine::calc_max_threshold(SAMPLE_TYPE_T& threshold)
 {
-	return fixed_fields.attribits.threshold_factor && (threshold() > 1 && threshold() < sample_bits() - 2);
+	auto threshold_factor = threshold;
+	calc_max_threshold_factor(threshold_factor);
+	threshold = 2 << threshold_factor;
 }
 
-bool whisper_engine::data_mask_is_valid()
+template<typename SAMPLE_TYPE_T>
+void whisper_engine::calc_threshold(SAMPLE_TYPE_T & threshold)
 {
-	return fixed_fields.attribits.mask_factor && fixed_fields.attribits.mask_factor <= fixed_fields.attribits.threshold_factor;  
+	int32_t t_factor = fixed_fields.attribits.threshold_factor;
+	auto max_factor = t_factor;
+	
+	if (t_factor < 1)
+		threshold = 2;
+	else
+	{
+		calc_max_threshold_factor(max_factor);
+		if (t_factor > max_factor)
+		{
+			calc_max_threshold(threshold);
+			return;
+		}
+	}
+	threshold = 2 << t_factor;
 }
+
+

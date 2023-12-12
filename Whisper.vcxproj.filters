@@ -26,8 +26,5 @@
     <ClInclude Include="whisper.h">
       <Filter>Header Files</Filter>
     </ClInclude>
-    <ClInclude Include="whisper0.h">
-      <Filter>Header Files</Filter>
-    </ClInclude>
   </ItemGroup>
 </Project>
