@@ -19,6 +19,7 @@ void show_usage()
 	cout << "whisper decode <sound_file_in_path> [data_out_path]" << endl;
 }
 
+
 int main(int argc, char **argv)
 {
 	whisper_engine my_whisper;
@@ -48,6 +49,26 @@ int main(int argc, char **argv)
 	std::string music_out = ""; 
 	std::string music_out_path_string = "";
 
+	fixed_metadata whisper_metadata = my_whisper.get_whisper_metadata();
+	int16_t threshold_factor = 8;
+	//my_whisper.calc_max_threshold_factor(threshold_factor);
+	cout << threshold_factor << endl;
+
+	whisper_metadata.attribits.mask_factor = 0;  // 1 bits per sample
+	whisper_metadata.attribits.threshold_factor = threshold_factor;
+	//whisper_metadata.attribits.threshold_factor
+
+	//my_whisper.set_whisper_metadata(whisper_metadata);
+	//my_whisper.show_whisper_metadata();
+
+	//my_whisper.show_whisper_metadata();
+
+	my_whisper.set_default_metadata();
+
+	my_whisper.show_whisper_metadata();
+
+	//whisper_metadata = my_whisper.get_whisper_metadata();
+
 	if (cmd == "encode")
 	{
 		if (argc != 5)
@@ -55,10 +76,6 @@ int main(int argc, char **argv)
 			show_usage();
 			return -1;
 		}
-
-		fixed_metadata whisper_metadata = my_whisper.get_whisper_metadata();
-
-		my_whisper.set_whisper_metadata(whisper_metadata);
 
 		data_in = argv[2];
 		music_in = argv[3];
@@ -108,7 +125,10 @@ int main(int argc, char **argv)
 		my_whisper.set_in_musicpath(p_music_in);
 		my_whisper.set_out_musicpath(p_music_out);
 		my_whisper.open_files_for_encoding();
-		my_whisper.encode_data();
+		whisper_metadata = my_whisper.get_whisper_metadata();
+		whisper_metadata.attribits.threshold_factor += 2;
+		whisper_metadata.attribits.mask_factor = 7;
+		my_whisper.encode_data(whisper_metadata);
 		my_whisper.close_files();
 
 		cout << "Done" << endl;
@@ -118,6 +138,8 @@ int main(int argc, char **argv)
 	{
 		string data_out;
 		path p_data_out;
+
+		my_whisper.set_default_metadata();
 
 		if (argc < 3 || argc > 4)
 		{

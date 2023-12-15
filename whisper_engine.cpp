@@ -12,6 +12,37 @@
 
 using namespace whisper;
 
+void whisper_engine::show_whisper_metadata()
+{
+	attribit_fields& ab = fixed_fields.attribits;
+
+	cout << "filename_size: " << ab.filename_size << endl;
+	cout << "ignore_sign: " << ab.ignore_sign << endl;
+	cout << "mask_factor: " << ab.mask_factor << endl;
+	cout << "sample_bits_select: " << ab.sample_bits_select << endl;
+	cout << "skip_min_neg_sample_value: " << ab.skip_min_neg_sample_value << endl;
+	cout << "threshold_factor: " << ab.threshold_factor << endl;
+
+	cout << "data_byte_count: " << fixed_fields.data_byte_count << endl;
+
+	cout << "sample_bitmask: " << (uint32_t) sample_bitmask << endl;
+	cout << "sample_bitmask_size: " << (uint32_t) sample_bitmask_size << endl;
+	cout << "sample_threshold: " << sample_threshold << endl << endl;
+	
+}
+
+void whisper_engine::set_default_metadata()
+{
+	fixed_metadata whisper_metadata = get_whisper_metadata();
+	int16_t threshold_factor = 8;
+	cout << threshold_factor << endl;
+
+	whisper_metadata.attribits.mask_factor = 0;  // 1 bits per sample
+	whisper_metadata.attribits.threshold_factor = threshold_factor;
+
+	set_whisper_metadata(whisper_metadata);
+	show_whisper_metadata();
+}
 
 
 fixed_metadata whisper_engine::get_whisper_metadata()
@@ -19,39 +50,55 @@ fixed_metadata whisper_engine::get_whisper_metadata()
 	return fixed_fields;
 }
 
-void whisper_engine::set_whisper_metadata(fixed_metadata whisper_fields)
+bool whisper_engine::set_whisper_metadata(fixed_metadata whisper_fields)
 {
 	fixed_fields = whisper_fields;
+	cout << fixed_fields.attribits.threshold_factor << endl;
+	//calc_max_data_bitmask(sample_bitmask); 
+	calc_data_bitmask(sample_bitmask);
+	calc_threshold(sample_threshold); 
+	calc_mask_num_bits(sample_bitmask_size);
+
+	if (sample_bitmask >= sample_threshold)
+	{
+		cout << "Mask factor: " << fixed_fields.attribits.mask_factor << endl;
+		cout << "Threshold factor: " << fixed_fields.attribits.threshold_factor << endl;
+		cout << "Data bitmask (" << (uint16_t)sample_bitmask << ")" << " exceeds sample threshold ("  << sample_threshold << ")" << endl;
+		exit(-1);
+	}
+
+	return true;
 }
 
 ios_base::iostate whisper_engine::decode_whisper_metadata()
 {
-	uint8_t* md_ptr = (uint8_t *)&fixed_fields;
+	fixed_metadata metadata;
+	uint8_t* md_ptr = (uint8_t *)&metadata;
 	uint32_t index = 0;
 	ios_base::iostate status = 0;
 
-	for(index = 0; !status && index < sizeof(fixed_fields); index++)
+	for(index = 0; !status && index < sizeof(metadata); index++)
 	{
-		status = decode_data_byte(md_ptr[index]);
+		status = decode_metadata_byte(md_ptr[index]);
 	}
 
-	if (status || index < sizeof(fixed_fields))
+	if (status || index < sizeof(metadata))
 	{
 		cout << "Unexpected EOF" << endl;
 		close_files();
 		exit(-1);
 	}
 
-	if (fixed_fields.data_byte_count > 2340)
-	{
-		cout << "Possible misread of whisper metadata. Byte count: " << fixed_fields.data_byte_count << endl;
-	}
+	//if (metadata.data_byte_count > 2340)
+	//{
+	//	cout << "Possible misread of whisper metadata. Byte count: " << metadata.data_byte_count << endl;
+	//}
 
 	string m;
 
 	for (index = 0; index < 7; index++)
 	{
-		m += (char) fixed_fields.magic[index];
+		m += (char) metadata.magic[index];
 	}
 	if (m != "WHISPER")
 	{
@@ -64,6 +111,11 @@ ios_base::iostate whisper_engine::decode_whisper_metadata()
 		cout << "Identified whisper content" << endl;
 	}
 
+	//set_whisper_metadata(metadata);
+	set_default_metadata();
+	//metadata =  get_whisper_metadata();
+	//set_whisper_metadata(metadata);
+	show_whisper_metadata();
 	return status;
 }
 
@@ -76,7 +128,7 @@ ios_base::iostate whisper_engine::decode_whisper_embedded_filename()
 
 	for (index = 0; !status && index < fixed_fields.attribits.filename_size; index++)
 	{
-		status = decode_data_byte(data_byte);
+		status = decode_metadata_byte(data_byte);
 		char c = data_byte;
 		filename += c;
 	}
@@ -91,7 +143,7 @@ ios_base::iostate whisper_engine::decode_whisper_embedded_filename()
 	return status;
 }
 
-int whisper_engine::decode_data_byte(uint8_t &data_byte)
+int whisper_engine::decode_metadata_byte(uint8_t& data_byte)
 {
 	int16_t sample = 0;
 	infile.read((char*)&sample, sizeof(sample));
@@ -104,7 +156,7 @@ int whisper_engine::decode_data_byte(uint8_t &data_byte)
 
 	data_byte = 0;
 
-	while (!status) 
+	while (!status)
 	{
 		int16_t absamp = abs(sample);
 		if (absamp >= threshold)
@@ -133,6 +185,117 @@ int whisper_engine::decode_data_byte(uint8_t &data_byte)
 	return status;
 }
 
+ios_base::iostate whisper_engine::decode_data_byte(uint8_t &data_byte)
+{
+	uint8_t datamask = get_data_bitmask();
+	uint8_t mask_bitsize = sample_bitmask_size;
+	//uint8_t mask_shift_val = mask_bitsize;
+	//uint8_t partial_datum = 0;
+	const int16_t sample_mask = datamask;
+	uint8_t fragment_elevator = 0;
+	const uint8_t elevator_shift_size = data_mask_bit_count();
+	uint8_t elevator_shift_position = 1;
+	uint8_t elevator_shift_val = 0;
+	uint8_t elevator_mask = datamask;
+
+	//uint8_t data_bit_pos = 1;
+	//uint8_t sample_bit_pos = 1;
+
+	int16_t threshold = get_data_threshold();
+
+	int16_t sample = 0;
+
+	auto status = 0; // = infile.rdstate();
+
+	//uint8_t bit_pos = 1;
+	//uint8_t index = 0;
+
+	data_byte = 0;
+
+	while (elevator_mask) 
+	{
+		infile.read((char*)&sample, sizeof(sample));
+		status = infile.rdstate();
+		if (status)
+			break;
+		int16_t absamp = abs(sample);
+		if (absamp >= threshold)
+		{
+			fragment_elevator = absamp & sample_mask;
+			elevator_shift_val = (elevator_shift_size * elevator_shift_position);
+			if (elevator_shift_val)
+			{
+				fragment_elevator <<= elevator_shift_val;
+			}
+			data_byte |= fragment_elevator;
+			elevator_shift_position++;
+			elevator_shift_val = (elevator_shift_size * elevator_shift_position);
+			elevator_mask <<= elevator_shift_val;
+		}
+	}
+
+	if (elevator_mask)
+	{
+		cout << "Unexpected EOF" << endl;
+		close_files();
+		exit(-1);
+	}
+
+	return status;
+}
+
+int whisper_engine::decode_data_byteOLD(uint8_t& data_byte)
+{
+	uint8_t datamask = get_data_bitmask();
+	uint8_t mask_bitsize = sample_bitmask_size;
+	uint8_t mask_shift_val = mask_bitsize;
+	uint8_t partial_datum = 0;
+	const int16_t sample_mask = datamask;
+
+	uint8_t data_bit_pos = 1;
+	uint8_t sample_bit_pos = 1;
+
+	int16_t threshold = get_data_threshold();
+
+	int16_t sample = 0;
+	infile.read((char*)&sample, sizeof(sample));
+	auto status = infile.rdstate();
+
+	uint8_t bit_pos = 1;
+	uint8_t index = 0;
+
+	data_byte = 0;
+
+	while (!status && datamask)
+	{
+		int16_t absamp = abs(sample);
+		if (absamp >= threshold)
+		{
+			datamask = sample_mask;
+			partial_datum = (absamp & datamask);
+			partial_datum <<= mask_shift_val;
+			datamask <<= mask_shift_val;
+			data_byte |= partial_datum;
+			mask_shift_val += mask_bitsize;
+			if (!datamask)
+			{
+				return ios_base::goodbit;
+			}
+		}
+		infile.read((char*)&sample, sizeof(sample));
+		status = infile.rdstate();
+	}
+
+	if (datamask)
+	{
+		cout << "Unexpected EOF" << endl;
+		close_files();
+		exit(-1);
+	}
+
+	return status;
+}
+
 int whisper_engine::decode_data()
 {
 	WavMetadata wav_metadata = { 0 };
@@ -146,6 +309,7 @@ int whisper_engine::decode_data()
 	}
 
 	status = decode_whisper_metadata();
+	set_default_metadata();
 
 	if (status)
 	{
@@ -185,11 +349,13 @@ int whisper_engine::decode_data()
 	return status;
 }
 
-int whisper_engine::encode_data()
+int whisper_engine::encode_data(fixed_metadata metadata)
 {
 	int status = 0;
+	uint8_t mask = get_data_bitmask();
 
 	fixed_fields.data_byte_count = filesystem::file_size(datafilepath);
+	cout << "Data byte count: " << fixed_fields.data_byte_count << endl;
 
 	filename = datafilepath.filename().string();
 	
@@ -200,8 +366,24 @@ int whisper_engine::encode_data()
 	}
 
 	copy_wav_metadata();
+
+	//int16_t threshold_factor = 8;
+	//cout << threshold_factor << endl;
+
+	//whisper_metadata.attribits.mask_factor = 0;  // 1 bits per sample
+	//whisper_metadata.attribits.threshold_factor = threshold_factor;
+
+	//set_whisper_metadata(whisper_metadata);
+
 	write_whisper_metadata();
+
+	fixed_metadata whisper_metadata = get_whisper_metadata();
+	whisper_metadata.attribits.threshold_factor = metadata.attribits.threshold_factor;
+	whisper_metadata.attribits.mask_factor = metadata.attribits.mask_factor;
+	set_whisper_metadata(whisper_metadata);
+
 	write_whisper_embedded_filename();
+	show_whisper_metadata();
 	write_hidden_data();
 	copy_remaining_samples();
 	close_files();
@@ -371,11 +553,11 @@ std::ios_base::fmtflags whisper_engine::copy_wav_metadata()
 		exit(-1);
 	}
 
-	fixed_fields.attribits.sample_bits_select = (wav_metadata.format.numsamplebits / 8) - 1;  
-	fixed_fields.attribits.threshold_factor =    wav_metadata.format.numsamplebits / 2;  // default
-	fixed_fields.attribits.mask_factor = 0;  // default (this is the only supported value at this time
-	fixed_fields.attribits.skip_min_neg_sample_value = true;
-	fixed_fields.attribits.ignore_sign = 0;
+	//fixed_fields.attribits.sample_bits_select = (wav_metadata.format.numsamplebits / 8) - 1;  
+	//fixed_fields.attribits.threshold_factor =    wav_metadata.format.numsamplebits / 2;  // default
+	//fixed_fields.attribits.mask_factor = 0;  // default (this is the only supported value at this time
+	//fixed_fields.attribits.skip_min_neg_sample_value = true;
+	//fixed_fields.attribits.ignore_sign = 0;
 
 	outfile.write((char*)&wav_metadata, sizeof(wav_metadata));
 	state = outfile.rdstate();
@@ -498,22 +680,189 @@ std::ios_base::fmtflags whisper_engine::write_whisper_metadata() // expects open
 
 std::ios_base::fmtflags whisper_engine::write_hidden_data() // expects open files and does not close them
 {
-	uint8_t single_datum; 
+	uint8_t single_datum = 0; 
+	uint32_t count = 0;
 	ios_base::iostate status = 0;
 	datafile.read((char *)&single_datum, sizeof(single_datum));
 	while (!(status = datafile.rdstate()))
 	{
-		status = write_single_hidden_datum(&single_datum, sizeof(single_datum));
+		status = write_single_hidden_datum(single_datum, count);
+		//assemble_masked_data()
 		if (status)
 			break;
 		datafile.read((char *)&single_datum, sizeof(single_datum));
 	}
+	if (count < fixed_fields.data_byte_count)
+	{
+		cout << "Insufficient space for sample data. " << fixed_fields.data_byte_count - count << "more needed. " << endl;
+		return -1;
+	}
 	return status;
 }
 
-std::ios_base::fmtflags whisper_engine::write_single_hidden_datum(uint8_t *data, int32_t data_width) // expects open files and does not close them
+void whisper_engine::calc_mask_num_bits(uint8_t& num_bits)
+{
+	uint8_t factor = fixed_fields.attribits.mask_factor;
+
+	if (factor == 0)
+	{
+		num_bits = 1;
+		return;
+	}
+	
+	num_bits = 1 << factor;
+}
+
+
+template<typename SAMPLE_TYPE_T>
+bool whisper_engine::assemble_masked_dataOLD(SAMPLE_TYPE_T& sample, uint8_t & data_bit_pos, uint8_t & sample_bit_pos, uint8_t& data_mask, const SAMPLE_TYPE_T sample_mask, const uint8_t masked_data)
+{
+	int16_t absamp = abs(sample);
+	absamp &= ~sample_mask;
+
+	if (absamp < sample_threshold)
+	{
+		return true;
+	}
+	uint8_t data_mask_bits = data_mask_bit_count();
+
+	while (data_bit_pos & data_mask && sample_bit_pos & sample_mask)
+	{
+		if (masked_data & data_bit_pos)
+		{
+			absamp |= sample_bit_pos;
+		}
+		if (sample >= 0)
+		{
+			sample = absamp;
+		}
+		else
+		{
+			sample = -absamp;
+		}
+		sample_bit_pos <<= 1;
+		data_bit_pos <<= 1;
+	}
+	data_mask <<= data_mask_bits;
+
+	return true;
+}
+
+
+template<typename SAMPLE_TYPE_T>
+bool whisper_engine::assemble_masked_data(uint8_t & byte_data, SAMPLE_TYPE_T& sample, uint8_t & progress_mask)
+{
+	int16_t absamp = abs(sample);
+	const uint8_t sample_mask = get_data_bitmask();
+	absamp &= ~sample_mask;
+
+	if (!progress_mask)
+		return true;
+	if (absamp < sample_threshold) 
+	{
+		return false;
+	}
+
+	uint8_t data_mask_bits = data_mask_bit_count();
+	uint8_t masked_data = byte_data & sample_mask;
+
+	absamp |= masked_data;
+
+	byte_data >>= data_mask_bits;
+	progress_mask >>= data_mask_bits;
+
+	if (sample >= 0)
+	{
+		sample = absamp;
+	}
+	else
+	{
+		sample = -absamp;
+	}
+
+	return true;
+}
+
+std::ios_base::fmtflags whisper_engine::write_single_hidden_datum(uint8_t& data, uint32_t & count) // expects open files and does not close them
 {
 	int16_t sample = 0;
+	uint8_t progress_mask = ~0;
+	ios_base::fmtflags status = 0;
+
+	infile.read((char*)&sample, sizeof(sample));
+
+	int16_t threshold = get_data_threshold();
+
+	while (!( status = infile.rdstate()) && progress_mask)
+	{
+		assemble_masked_data(data, sample, progress_mask);
+
+		outfile.write((const char*)&sample, sizeof(sample));
+
+		if ((status = outfile.rdstate()))
+		{
+			return status;
+		}
+
+		count++;
+
+		infile.read((char*)&sample, sizeof(sample));
+	}
+
+	if (progress_mask)
+		return status;
+	else if (status && !(status & ios_base::eofbit))
+		return status;
+	else
+		count++;
+	return status;
+}
+
+std::ios_base::fmtflags whisper_engine::write_single_hidden_datumOLD2(uint8_t& data, uint32_t& count) // expects open files and does not close them
+{
+	int16_t sample = 0;
+	uint8_t datamask = get_data_bitmask();
+	uint8_t mask_bitsize = sample_bitmask_size;
+	const int16_t sample_mask = datamask;
+
+	infile.read((char*)&sample, sizeof(sample));
+
+	uint8_t data_bit_pos = 1;
+	uint8_t sample_bit_pos = 1;
+
+	int16_t threshold = get_data_threshold();
+
+	while (!infile.rdstate() && datamask)
+	{
+		assemble_masked_data(data, sample, datamask);
+
+		outfile.write((const char*)&sample, sizeof(sample));
+
+		count++;
+
+		if (outfile.rdstate())
+		{
+			break;
+		}
+		if (!datamask)
+		{
+			return ios_base::goodbit;
+		}
+
+		infile.read((char*)&sample, sizeof(sample));
+	}
+
+	return infile.rdstate() | outfile.rdstate();
+}
+
+
+std::ios_base::fmtflags whisper_engine::write_single_hidden_datumOLD(uint8_t *data, int32_t data_width) // expects open files and does not close them
+{
+	int16_t sample = 0;
+	uint8_t mask = get_data_bitmask();
+	uint8_t mask_bitsize = sample_bitmask_size;  
+	//calc_m
+
 	if (data_width < 1)
 	{
 		return 0;
@@ -524,14 +873,14 @@ std::ios_base::fmtflags whisper_engine::write_single_hidden_datum(uint8_t *data,
 	uint8_t bit_pos = 1;
 	uint8_t index = 0;
 
-	int16_t threshold = 0x800;
+	int16_t threshold = get_data_threshold();
 
 	while (!infile.rdstate()) 
 	{
 		int16_t absamp = abs(sample);
 		if (absamp >= threshold)
 		{
-			absamp &= ~1;
+			absamp &= ~mask;
 			if (ptr_data[index] & bit_pos)
 			{
 				absamp |= 1;
@@ -603,14 +952,33 @@ template<typename SAMPLE_TYPE_T>
 bool whisper_engine::calc_max_data_bitmask(SAMPLE_TYPE_T &bitmask)
 {
 	SAMPLE_TYPE_T threshold = 0;
-	bool ret_val = calc_threshold(threshold);
+	calc_threshold(threshold);
 	bitmask = threshold - 1;
-	return ret_val;
+	return true;
+}
+
+int8_t whisper_engine::get_data_bitmask()
+{
+	return sample_bitmask;
+}
+
+uint16_t whisper_engine::get_data_threshold()
+{
+	return sample_threshold;
 }
 
 template<typename SAMPLE_TYPE_T>
 bool whisper_engine::calc_data_bitmask(SAMPLE_TYPE_T& bitmask)
 {
+	uint8_t num_bits = 1;
+
+	calc_mask_num_bits(num_bits);
+	SAMPLE_TYPE_T threshold = 2;
+	calc_threshold(threshold);
+	SAMPLE_TYPE_T bitmask_tmp = (1L << num_bits) - 1;
+
+	return true;
+
 	if (!fixed_fields.attribits.mask_factor)
 		fixed_fields.attribits.mask_factor = 1;
 	auto mask_factor = fixed_fields.attribits.mask_factor;
@@ -629,7 +997,10 @@ bool whisper_engine::calc_default_threshold(SAMPLE_TYPE_T &threshold)
 	uint8_t sizebytes = sizeof(threshold);
 	uint8_t shift_factor = (min(sizebytes, sample_bytes()) * 4);
 
-	threshold =  1 << shift_factor;
+	if (shift_factor < 1)
+		threshold = 2;
+	else
+		threshold = ((SAMPLE_TYPE_T) 2) << shift_factor;
 
 	return true;
 }
@@ -786,7 +1157,7 @@ inline uint8_t whisper_engine::sample_bits()
 template<typename SAMPLE_TYPE_T>
 void whisper_engine::calc_max_threshold_factor(SAMPLE_TYPE_T &threshold_factor)
 {
-	threshold_factor = sizeof(threshold_factor) - 4;
+	threshold_factor = 8 * sizeof(threshold_factor) - 4;  
 }
 
 template<typename SAMPLE_TYPE_T>
@@ -794,7 +1165,10 @@ void whisper_engine::calc_max_threshold(SAMPLE_TYPE_T& threshold)
 {
 	auto threshold_factor = threshold;
 	calc_max_threshold_factor(threshold_factor);
-	threshold = 2 << threshold_factor;
+	if (threshold_factor < 1)
+		threshold = 2;
+	else
+		threshold = 2 << threshold_factor;
 }
 
 template<typename SAMPLE_TYPE_T>
@@ -804,17 +1178,28 @@ void whisper_engine::calc_threshold(SAMPLE_TYPE_T & threshold)
 	auto max_factor = t_factor;
 	
 	if (t_factor < 1)
+	{
+		cout << -__LINE__ << endl;
 		threshold = 2;
+		return;
+	}
 	else
 	{
+		cout << -__LINE__ << endl;
 		calc_max_threshold_factor(max_factor);
+		cout << "t_factor: " << t_factor << endl;
+		cout << "max_factor: " << max_factor << endl;
 		if (t_factor > max_factor)
 		{
+			cout << -__LINE__ << endl;
 			calc_max_threshold(threshold);
 			return;
 		}
 	}
-	threshold = 2 << t_factor;
+	cout << -__LINE__ << endl;
+	threshold = 2L << t_factor;
 }
+
+
 
 

@@ -97,6 +97,9 @@ namespace whisper
 	{
 	private:
 		fixed_metadata fixed_fields;
+		int16_t sample_threshold;
+		uint8_t sample_bitmask;
+		uint8_t sample_bitmask_size;
 		filesystem::path datafilepath;
 		std::string filename;
 		filesystem::path infilepath;
@@ -108,6 +111,10 @@ namespace whisper
 	public:
 		template<typename SAMPLE_TYPE_T>
 		void calc_threshold(SAMPLE_TYPE_T& threshold);
+		template<typename SAMPLE_TYPE_T>
+		bool assemble_masked_dataOLD(SAMPLE_TYPE_T& sample, uint8_t& data_bit_pos, uint8_t& sample_bit_pos, uint8_t& data_mask, const SAMPLE_TYPE_T sample_mask, const uint8_t masked_data);
+		template<typename SAMPLE_TYPE_T>
+		bool assemble_masked_data(uint8_t & byte_data, SAMPLE_TYPE_T& sample, uint8_t & progress_mask);
 		template<typename SAMPLE_TYPE_T>
 		bool calc_max_data_bitmask(SAMPLE_TYPE_T& bitmask);
 		template<typename SAMPLE_TYPE_T>
@@ -121,22 +128,30 @@ namespace whisper
 
 		whisper_engine()
 		{
+			sample_bitmask = 1;
+			sample_bitmask_size = 1;
+			sample_threshold = 0x100;
 			fixed_fields = { { 'W','H','I','S','P','E','R' }, {0}, 0 };
 			fixed_fields.attribits.threshold_factor = 8;
 			fixed_fields.attribits.sample_bits_select = 1;
 			fixed_fields.attribits.skip_min_neg_sample_value = true;
+			fixed_fields.attribits.mask_factor = 0;
 			wav_metadata = { 0 };
 		}
-		int encode_data();
 		int decode_data();
+		int encode_data(fixed_metadata metadata);
 		int open_files_for_decoding();
 		int open_files_for_encoding(); 
 		void close_files();
+		void show_whisper_metadata();
+		void set_default_metadata();
 		fixed_metadata get_whisper_metadata();
-		void set_whisper_metadata(fixed_metadata whisper_fields);
+		bool set_whisper_metadata(fixed_metadata whisper_fields);
 		ios_base::iostate  decode_whisper_metadata();
 		ios_base::iostate  decode_data_byte(uint8_t& data_byte);
+		int decode_data_byteOLD(uint8_t& data_byte);
 		ios_base::iostate decode_whisper_embedded_filename();
+		int decode_metadata_byte(uint8_t& data_byte);
 		std::ios_base::fmtflags copy_wav_metadata();
 
 		std::ios_base::fmtflags write_whisper_metadata();
@@ -144,9 +159,21 @@ namespace whisper
 
 		std::ios_base::fmtflags write_hidden_data();
 
-		std::ios_base::fmtflags write_single_hidden_datum(uint8_t* data, int32_t data_width);
+		void calc_mask_num_bits(uint8_t& num_bits);
+
+		//void calc_mask_num_bits(uint16_t& num_bits);
+
+		std::ios_base::fmtflags write_single_hidden_datum(uint8_t& data, uint32_t & count);
+
+		std::ios_base::fmtflags write_single_hidden_datumOLD2(uint8_t& data, uint32_t& count);
+
+		std::ios_base::fmtflags write_single_hidden_datumOLD(uint8_t* data, int32_t data_width);
 
 		std::ios_base::fmtflags decode_hidden_data();
+
+		int8_t get_data_bitmask();
+
+		uint16_t get_data_threshold();
 
 		bool datafile_exists();
 
