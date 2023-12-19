@@ -16,6 +16,10 @@
 using namespace whisper;
 using namespace std;
 
+template class whisper_engine<int8_t>;
+template class whisper_engine<int16_t>;
+template class whisper_engine<int32_t>;
+
 void show_usage_for_encode()
 {
 	cout << "Usage:" << endl;

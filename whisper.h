@@ -280,4 +280,3 @@ namespace whisper
 
 };
 
-#include "whisper_engine_implementation.h"
