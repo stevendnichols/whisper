@@ -76,12 +76,12 @@ namespace whisper
 	typedef struct attribit_fields
 	{
 		uint32_t
-			sample_bits_select : 3,			// sample_bits == 8 * (sample_bits_select + 1);  for now, this is always 1
+			sample_bits_select : 2,			// sample_bits == 8 * (sample_bits_select + 1);  for now, this is always 1
 			threshold_factor : 5,			// threshold = 1 << threshold_factor;   1 < threshold  <=   (1 << (sample_bits - 3))
-			mask_factor : 3,				// mask = ((1 << mask_factor) - 1) & ((1 << threshold_factor) - 1)
+			mask_factor : 2,				// mask = ((1 << mask_factor) - 1) & ((1 << threshold_factor) - 1)
 			ignore_sign : 1,				// only default (false) is currently supported
 			skip_min_neg_sample_value : 1,  // default is false, but this flag is currently ignored, so effectively, the sample is always skipped
-			unused : 9,
+			unused : 11,
 			filename_size : 10;				// This allows for an excessive amount of metadata for which sufficient space may not be available: YMMV!
 	} attribit_fields;
 
@@ -93,120 +93,191 @@ namespace whisper
 	} fixed_metadata;
 #pragma pack(pop)
 
-	class whisper_engine
-	{
-	private:
-		fixed_metadata fixed_fields;
-		int16_t sample_threshold;
-		uint8_t sample_bitmask;
-		uint8_t sample_bitmask_size;
-		filesystem::path datafilepath;
-		std::string filename;
-		filesystem::path infilepath;
-		filesystem::path outfilepath;
-		std::fstream infile;
-		std::fstream outfile;
-		std::fstream datafile;
-		WavMetadata wav_metadata;
-	public:
-		template<typename SAMPLE_TYPE_T>
-		void calc_threshold(SAMPLE_TYPE_T& threshold);
-		template<typename SAMPLE_TYPE_T>
-		bool assemble_masked_dataOLD(SAMPLE_TYPE_T& sample, uint8_t& data_bit_pos, uint8_t& sample_bit_pos, uint8_t& data_mask, const SAMPLE_TYPE_T sample_mask, const uint8_t masked_data);
-		template<typename SAMPLE_TYPE_T>
-		bool assemble_masked_data(uint8_t & byte_data, SAMPLE_TYPE_T& sample, uint8_t & progress_mask);
-		template<typename SAMPLE_TYPE_T>
-		bool calc_max_data_bitmask(SAMPLE_TYPE_T& bitmask);
-		template<typename SAMPLE_TYPE_T>
-		bool calc_data_bitmask(SAMPLE_TYPE_T& bitmask);
-		template<typename SAMPLE_TYPE_T>
-		bool calc_default_threshold(SAMPLE_TYPE_T& threshold);
-		template<typename SAMPLE_TYPE_T>
-		void calc_max_threshold_factor(SAMPLE_TYPE_T& threshold_factor);
-		template<typename SAMPLE_TYPE_T>
-		void calc_max_threshold(SAMPLE_TYPE_T& threshold);
-
-		whisper_engine()
+		template<class SAMPLE_TYPE_T>
+		class whisper_engine
 		{
-			sample_bitmask = 1;
-			sample_bitmask_size = 1;
-			sample_threshold = 0x100;
-			fixed_fields = { { 'W','H','I','S','P','E','R' }, {0}, 0 };
-			fixed_fields.attribits.threshold_factor = 8;
-			fixed_fields.attribits.sample_bits_select = 1;
-			fixed_fields.attribits.skip_min_neg_sample_value = true;
-			fixed_fields.attribits.mask_factor = 0;
-			wav_metadata = { 0 };
-		}
-		int decode_data();
-		int encode_data(fixed_metadata metadata);
-		int open_files_for_decoding();
-		int open_files_for_encoding(); 
-		void close_files();
-		void show_whisper_metadata();
-		void set_default_metadata();
-		fixed_metadata get_whisper_metadata();
-		bool set_whisper_metadata(fixed_metadata whisper_fields);
-		ios_base::iostate  decode_whisper_metadata();
-		ios_base::iostate  decode_data_byte(uint8_t& data_byte);
-		int decode_data_byteOLD(uint8_t& data_byte);
-		ios_base::iostate decode_whisper_embedded_filename();
-		int decode_metadata_byte(uint8_t& data_byte);
-		std::ios_base::fmtflags copy_wav_metadata();
+		private:
+			SAMPLE_TYPE_T foo;
+			fixed_metadata fixed_fields;
+			int16_t max_sample_threshold;
+			int16_t sample_threshold;
+			uint8_t sample_bitmask;
+			uint8_t sample_bitmask_size;
+			filesystem::path datafilepath;
+			std::string filename;
+			filesystem::path infilepath;
+			filesystem::path outfilepath;
+			std::fstream infile;
+			std::fstream outfile;
+			std::fstream datafile;
+			const int8_t THRESHOLD_FACTOR_MAX;
+			WavMetadata wav_metadata;
+		public:
+			void calc_threshold(SAMPLE_TYPE_T &threshold);
+			bool assemble_masked_dataOLD(SAMPLE_TYPE_T& sample, uint8_t& data_bit_pos, uint8_t& sample_bit_pos, uint8_t& data_mask, const SAMPLE_TYPE_T sample_mask, const uint8_t masked_data);
+			bool assemble_masked_data(uint8_t& byte_data, SAMPLE_TYPE_T& sample, uint8_t& progress_mask);
+			void calc_max_data_bitmask(SAMPLE_TYPE_T& bitmask);
+			void calc_data_bitmask(SAMPLE_TYPE_T& bitmask);
+			void calc_default_threshold(SAMPLE_TYPE_T& threshold);
+			void calc_max_threshold(SAMPLE_TYPE_T &threshold);
 
-		std::ios_base::fmtflags write_whisper_metadata();
-		std::ios_base::fmtflags write_whisper_embedded_filename();
+			static void check_sample_compatibility(uint8_t alternative_size = 8 * sizeof(SAMPLE_TYPE_T))
+			{
+				uint8_t word_size = 8 * sizeof(SAMPLE_TYPE_T);
+				if (alternative_size == 0)
+					alternative_size = word_size;
+				if (alternative_size % 8)
+				{
+					cout << "Invalid sample size: " << alternative_size << "-bit" << endl;
+					exit(-1);
+				}
+				if (alternative_size > word_size || word_size >= alternative_size * 2)
+				{
+					cout << "Requested sample size " << alternative_size << "-bit " << " not compatible with specified word size " << word_size << "-bit" << endl;
+					exit(-1);
+				}
+				switch (word_size)
+				{
+				case 16: // for now, 16 is the only supported sample size
+					break;
+				case 8:
+				case 32:
+				case 64:
+				case 128:
+					cout << "Unsupported word size: " << word_size << "-bit" << endl;
+					exit(-1);
+				}
+				switch (alternative_size)
+				{
+				case 16: // for now, 16 is the only supported sample size
+					break;
+				case 8:
+				case 24:
+				case 32:
+				case 40:
+				case 48:
+				case 56:
+				case 64:
+				case 72:
+				case 80:
+				case 88:
+				case 96:
+				case 104:
+				case 112:
+				case 120:
+				case 128:
+					cout << "Unsupported sample size: " << alternative_size << "-bit" << endl;
+					exit(-1);
+				default: break;
+				}
+			}
 
-		std::ios_base::fmtflags write_hidden_data();
+			static uint8_t calc_absolute_max_threshold_factor(uint8_t alternative_sample_size = 0)
+			{
+				uint8_t word_size = 8 * sizeof(SAMPLE_TYPE_T);
+				check_sample_compatibility(alternative_sample_size);
+				if (alternative_sample_size == 0 || alternative_sample_size == word_size)
+				{
+					return word_size - 4;
+				}
+				return alternative_sample_size - 4;
+			}
 
-		void calc_mask_num_bits(uint8_t& num_bits);
+			//template<typename SAMPLE_TYPE_T>
+			whisper_engine() : THRESHOLD_FACTOR_MAX(calc_absolute_max_threshold_factor())
+			{
+				uint8_t sample_size = 8 * sizeof(SAMPLE_TYPE_T);
+				if (sample_size != 16)
+				{
+					cout << "Unsupported sample size: " << sample_size << "-bit" << endl;  // for now
+				}
+				//if (alternative_size < sizeof(SAMPLE_TYPE_T) && !(alternative_size % 8))
+				{
+					//8 * alternative_sample_size - 4;
+					//void show_whisper_metadata();
+				}
 
-		//void calc_mask_num_bits(uint16_t& num_bits);
+			}
+			whisper_engine(uint8_t alternative_sample_size) : THRESHOLD_FACTOR_MAX(calc_absolute_max_threshold_factor(alternative_sample_size))
+			{
+				//sample_bitmask = 1;
+				//sample_bitmask_size = 1;
+				//sample_threshold = 0x100;
+				wav_metadata = { 0 };
+				set_default_metadata();
+			}
 
-		std::ios_base::fmtflags write_single_hidden_datum(uint8_t& data, uint32_t & count);
+			int decode_data();
+			int encode_data(fixed_metadata metadata);
+			int open_files_for_decoding();
+			int open_files_for_encoding();
+			void close_files();
+			void show_whisper_metadata();
+			//template <typename T> void show_whisper_metadata();
+			void set_default_metadata();
+			fixed_metadata get_whisper_metadata();
+			void init_whisper_metadata();
+			bool set_whisper_metadata(fixed_metadata whisper_fields);
+			ios_base::iostate  decode_whisper_metadata();
+			ios_base::iostate  decode_data_byte(uint8_t& data_byte);
+			int decode_data_byteOLD(uint8_t& data_byte);
+			ios_base::iostate decode_whisper_embedded_filename();
+			int decode_metadata_byte(uint8_t& data_byte);
+			std::ios_base::fmtflags copy_wav_metadata();
 
-		std::ios_base::fmtflags write_single_hidden_datumOLD2(uint8_t& data, uint32_t& count);
+			std::ios_base::fmtflags write_whisper_metadata();
+			std::ios_base::fmtflags write_whisper_embedded_filename();
 
-		std::ios_base::fmtflags write_single_hidden_datumOLD(uint8_t* data, int32_t data_width);
+			std::ios_base::fmtflags write_hidden_data();
 
-		std::ios_base::fmtflags decode_hidden_data();
+			void calc_mask_num_bits(uint8_t& num_bits);
 
-		int8_t get_data_bitmask();
+			//void calc_mask_num_bits(uint16_t& num_bits);
 
-		uint16_t get_data_threshold();
+			std::ios_base::fmtflags write_single_hidden_datum(uint8_t& data, uint32_t& count);
 
-		bool datafile_exists();
+			std::ios_base::fmtflags write_single_hidden_datumOLD2(uint8_t& data, uint32_t& count);
 
-		bool create_datafile(filesystem::path filepath);
+			std::ios_base::fmtflags write_single_hidden_datumOLD(uint8_t* data, int32_t data_width);
 
-		bool set_datafile_name(filesystem::path file_path, bool read_only);
+			std::ios_base::fmtflags decode_hidden_data();
 
-		bool set_in_datafile_name(filesystem::path file_path);
+			int8_t get_data_bitmask();
 
-		bool set_out_datapath(filesystem::path file_path);
+			uint16_t get_data_threshold();
 
-		bool set_out_datadir(filesystem::path file_path);
+			bool datafile_exists();
 
-		bool set_in_musicpath(filesystem::path file_path);
+			bool create_datafile(filesystem::path filepath);
 
-		bool set_out_musicpath(filesystem::path file_path);
+			bool set_datafile_name(filesystem::path file_path, bool read_only);
 
-		uint8_t data_mask_bit_count();
+			bool set_in_datafile_name(filesystem::path file_path);
 
-		int64_t precision_mask();
+			bool set_out_datapath(filesystem::path file_path);
 
-		bool magic_is_valid();
+			bool set_out_datadir(filesystem::path file_path);
 
-		uint8_t sample_bytes();
+			bool set_in_musicpath(filesystem::path file_path);
 
-		uint8_t sample_bits();
+			bool set_out_musicpath(filesystem::path file_path);
 
-		std::ios_base::fmtflags copy_remaining_samples(); // expects open files and does not close them
+			uint8_t data_mask_bit_count();
 
-		std::ios_base::fmtflags read_wav_metadata(WavMetadata& wav_metadata);
+			int64_t precision_mask();
 
-	};
+			bool magic_is_valid();
 
+			uint8_t sample_bytes();
 
-}
+			uint8_t sample_bits();
 
+			std::ios_base::fmtflags copy_remaining_samples(); // expects open files and does not close them
+
+			std::ios_base::fmtflags read_wav_metadata(WavMetadata& wav_metadata);
+
+		};
+
+};
+
+#include "whisper_engine_implementation.h"
